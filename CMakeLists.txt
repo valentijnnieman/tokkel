@@ -28,6 +28,13 @@ set_target_properties(tokkel_miniaudio PROPERTIES POSITION_INDEPENDENT_CODE ON)
 if(UNIX AND NOT APPLE AND NOT EMSCRIPTEN)
   find_package(Threads REQUIRED)
   target_link_libraries(tokkel_miniaudio PUBLIC Threads::Threads ${CMAKE_DL_LIBS} m)
+elseif(IOS)
+  # miniaudio's iOS backend uses AVAudioSession, so it has to be compiled as
+  # Objective-C there.
+  set_source_files_properties("${TOKKEL_MINIAUDIO_DIR}/miniaudio.c" PROPERTIES
+    COMPILE_FLAGS "-x objective-c")
+  target_link_libraries(tokkel_miniaudio PUBLIC
+    "-framework CoreFoundation" "-framework AudioToolbox" "-framework AVFoundation")
 elseif(APPLE)
   target_link_libraries(tokkel_miniaudio PUBLIC
     "-framework CoreFoundation" "-framework CoreAudio" "-framework AudioToolbox")
@@ -61,7 +68,15 @@ endif()
 # tokkel
 # ---------------------------------------------------------------------------
 add_library(tokkel STATIC
+  src/bass_synth.cpp
+  src/cello_synth.cpp
+  src/drum_synth.cpp
   src/engine.cpp
+  src/guitar_synth.cpp
+  src/piano_synth.cpp
+  src/bell_synth.cpp
+  src/sampler.cpp
+  src/synth.cpp
 )
 add_library(tokkel::tokkel ALIAS tokkel)
 target_include_directories(tokkel PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
