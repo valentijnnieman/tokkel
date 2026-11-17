@@ -97,9 +97,10 @@ public:
   //   engine.add_instrument("GuitarSynth", std::make_shared<tokkel::GuitarSynth>());
   //   engine.play_note("GuitarSynth", tokkel::note_frequency("E2"));
   bool add_instrument(const std::string &name, std::shared_ptr<Instrument> instrument);
-  // The instrument added under `name`, to set its parameters; null if none.
+  // What was added under `name`, an Instrument;
+  // null if nothing was. sampler() gives a sampler as one.
   std::shared_ptr<Instrument> instrument(const std::string &name) const;
-  // The names of all instruments added (not samplers).
+  // The names of everything added: synths and samplers.
   std::vector<std::string> instruments() const;
   // Set a parameter on the instrument added under `instrument` (see
   // Synth::set_parameter()). False when there is no such instrument.
