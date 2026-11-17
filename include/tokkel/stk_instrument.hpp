@@ -12,16 +12,16 @@ namespace tokkel {
 // (generators such as stk::SineWave or stk::Noise, and instruments such as
 // stk::Plucked), copying it to every output channel.
 //
-//   auto sine = std::make_shared<tokkel::StkSource<stk::SineWave>>();
+//   auto sine = std::make_shared<tokkel::StkInstrument<stk::SineWave>>();
 //   sine->unit.setFrequency(440.0);
 //   engine.play(sine);
 //
 // `unit` is read on the audio thread: changing it while it plays is only as
 // safe as the STK class makes it (a parameter set is usually a plain write).
-template <typename Unit> class StkSource : public Source {
+template <typename Unit> class StkInstrument : public Instrument {
 public:
   template <typename... Args>
-  explicit StkSource(Args &&...args) : unit(std::forward<Args>(args)...) {}
+  explicit StkInstrument(Args &&...args) : unit(std::forward<Args>(args)...) {}
 
   void render(float *out, std::uint32_t frames, std::uint32_t channels) override {
     for (std::uint32_t frame = 0; frame < frames; ++frame) {

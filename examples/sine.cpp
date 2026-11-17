@@ -1,5 +1,5 @@
 // Plays a two-second A4 through the default audio device.
-#include "tokkel/stk_source.hpp"
+#include "tokkel/stk_instrument.hpp"
 #include "tokkel/tokkel.hpp"
 
 #include <SineWave.h>
@@ -15,7 +15,7 @@ int main() {
     return 1;
   }
 
-  auto sine = std::make_shared<tokkel::StkSource<stk::SineWave>>();
+  auto sine = std::make_shared<tokkel::StkInstrument<stk::SineWave>>();
   sine->unit.setFrequency(440.0);
 
   const tokkel::VoiceId voice = engine.play(sine, 0.2f);

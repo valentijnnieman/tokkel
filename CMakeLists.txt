@@ -83,7 +83,7 @@ target_include_directories(tokkel PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_compile_features(tokkel PUBLIC cxx_std_17)
 set_target_properties(tokkel PROPERTIES POSITION_INDEPENDENT_CODE ON)
 # miniaudio stays an implementation detail; STK is part of the public API
-# (tokkel/stk_source.hpp wraps STK generators and instruments).
+# (tokkel/stk_instrument.hpp wraps STK generators and instruments).
 target_link_libraries(tokkel PUBLIC tokkel_stk PRIVATE tokkel_miniaudio)
 if(NOT MSVC)
   target_compile_options(tokkel PRIVATE -Wall -Wextra)

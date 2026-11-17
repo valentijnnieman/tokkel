@@ -8,7 +8,7 @@
 #include "tokkel/guitar_synth.hpp"
 #include "tokkel/piano_synth.hpp"
 #include "tokkel/sampler.hpp"
-#include "tokkel/stk_source.hpp"
+#include "tokkel/stk_instrument.hpp"
 #include "tokkel/synth.hpp"
 #include "tokkel/tokkel.hpp"
 
@@ -77,7 +77,7 @@ int main() {
   check(engine.render(mix.data(), frames) == frames, "render returns the frames asked for");
   check(peak(mix) == 0.0f, "an empty engine is silent");
 
-  auto sine = std::make_shared<tokkel::StkSource<stk::SineWave>>();
+  auto sine = std::make_shared<tokkel::StkInstrument<stk::SineWave>>();
   sine->unit.setFrequency(440.0);
   const tokkel::VoiceId voice = engine.play(sine, 0.5f);
   check(voice != 0, "play returns a voice");
@@ -613,7 +613,7 @@ int main() {
 
   // The main reverb: a sine that stopped rings on, on top of everything.
   engine.set_reverb(1.0f);
-  auto ping = std::make_shared<tokkel::StkSource<stk::SineWave>>();
+  auto ping = std::make_shared<tokkel::StkInstrument<stk::SineWave>>();
   ping->unit.setFrequency(440.0);
   engine.render(mix.data(), frames / 10); // the reverb glides in
   const tokkel::VoiceId pinged = engine.play(ping, 0.3f);
