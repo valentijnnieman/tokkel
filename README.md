@@ -257,3 +257,8 @@ device's thread.
 tokkel follows [Semantic Versioning](https://semver.org/): below 1.0, a
 breaking change raises the minor version (0.1 → 0.2), anything else the patch
 version. Releases are tagged in git (`v0.1.0`).
+
+## License
+
+tokkel is released under the [MIT License](LICENSE). miniaudio (public domain
+or MIT-0) and STK (its own MIT-style license) keep theirs, in `vendor/`.
