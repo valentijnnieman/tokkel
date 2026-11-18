@@ -1,6 +1,7 @@
 #pragma once
 
 #include "tokkel/tokkel.hpp"
+#include "tokkel/ring.hpp"
 
 #include <Chorus.h>
 #include <StifKarp.h>
@@ -108,7 +109,7 @@ private:
   // Notes played but not started yet: play_note() adds them, render() starts
   // them on the audio thread.
   std::mutex mutex;
-  std::vector<Note> waiting;
+  tokkel::Ring<Note, 64> waiting;
   std::minstd_rand random;
 
   // Audio thread only: notes with a delay, the frames rendered so far, and

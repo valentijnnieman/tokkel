@@ -33,7 +33,6 @@ float note_frequency(const std::string &name) {
 // Room for the waiting and scheduled notes up front, so neither play_note()
 // nor the audio thread ever allocates.
 Synth::Synth() {
-  waiting.reserve(64);
   scheduled.reserve(256);
   rev.setEffectMix(1.0); // only the reverb: render() mixes it with the dry sound
 }
@@ -42,8 +41,7 @@ void Synth::play_note(float frequency, float amplitude, float sustain, float del
   const auto delay_frames =
       static_cast<std::uint64_t>(std::max(delay, 0.0f) * stk::Stk::sampleRate());
   std::lock_guard<std::mutex> lock(mutex);
-  if (waiting.size() < waiting.capacity()) // else dropped: far too many at once
-    waiting.push_back(Note{frequency, amplitude, sustain, delay_frames, std::clamp(pan, -1.0f, 1.0f)});
+  waiting.push_to_ring(Note{frequency, amplitude, sustain, delay_frames, std::clamp(pan, -1.0f, 1.0f)});
 }
 
 void Synth::start(const Note &note) {
@@ -67,10 +65,11 @@ void Synth::start_due_notes() {
 }
 
 void Synth::render(float *out, std::uint32_t frames, std::uint32_t channels) {
-  // try_lock, because the audio thread must never wait: if a note is being
-  // added right now, the waiting notes start with the next block instead.
-  if (mutex.try_lock()) {
-    for (const Note &note : waiting) {
+  Note *notes;
+  std::size_t count;
+  while((count = waiting.peek_ring(&notes)) > 0) {
+    for(std::size_t i = 0; i < count; i++) {
+      const Note &note = notes[i];
       if (note.delay == 0) {
         start(note);
       } else if (scheduled.size() < scheduled.capacity()) { // else dropped
@@ -78,8 +77,7 @@ void Synth::render(float *out, std::uint32_t frames, std::uint32_t channels) {
         next_start = std::min(next_start, now + note.delay);
       }
     }
-    waiting.clear();
-    mutex.unlock();
+    waiting.advance_ring(count);
   }
 
   // A changed reverb takes effect from this block on.
