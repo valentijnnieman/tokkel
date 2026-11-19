@@ -60,13 +60,24 @@ void PianoSynth::note_on(float frequency, float amplitude, float sustain) {
   // makes sure the voice ends.
   voice.envelope.setAllTimes(0.004, seconds * 2.0f, 0.0, 0.1);
   voice.envelope.keyOn();
+  voice.sounding = true;
 }
 
 void PianoSynth::tick(float &left, float &right) {
   double mix = 0.0;
   for (Voice &voice : voices) {
+    if (!voice.sounding)
+      continue;
     const double strings = voice.first.tick() + voice.second.tick();
     mix += voice.envelope.tick() * voice.hammer.tick(strings);
+    // The envelope has closed: the strings, by then far quieter, are cleared
+    // and the voice rests until its next note.
+    if (voice.envelope.getState() != stk::ADSR::ATTACK && voice.envelope.lastOut() <= 0.0) {
+      voice.sounding = false;
+      voice.first.clear();
+      voice.second.clear();
+      voice.hammer.clear();
+    }
   }
   // The gain puts a single note at about the level of a StringSynth note;
   // tanh then rounds off the peaks of a full chord instead of clipping them.

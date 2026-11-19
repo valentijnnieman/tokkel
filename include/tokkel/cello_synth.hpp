@@ -40,6 +40,7 @@ private:
     stk::Bowed string{20.0}; // its lowest note, Hz
     int age = -1;  // frames since the note started; -1: never played
     int hold = -1; // frames until the bow lifts; -1: lifted
+    int quiet = 0; // frames it has been silent since the bow lifted
   };
 
   std::array<Voice, 4> voices;

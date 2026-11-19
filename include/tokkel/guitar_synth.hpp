@@ -40,6 +40,7 @@ protected:
   // `sustain`: seconds the note is held before it is damped.
   void note_on(float frequency, float amplitude, float sustain) override;
   void tick(float &left, float &right) override;
+  bool holding_notes() const override;
 
 private:
   struct Voice {
@@ -51,6 +52,8 @@ private:
     int excite_left = 0; // frames of the pluck still to feed into the string
     int excite_length = 0;
     int hold = -1;       // frames until it is damped; -1: already damped
+    bool sounding = false; // played and not yet silent: only then is it computed
+    int quiet = 0;       // frames it has been silent since it was damped
   };
   // One side's body: parallel resonances added to the strings.
   struct Body {

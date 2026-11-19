@@ -44,7 +44,14 @@ void Synth::play_note(float frequency, float amplitude, float sustain, float del
   waiting.push_to_ring(Note{frequency, amplitude, sustain, delay_frames, std::clamp(pan, -1.0f, 1.0f)});
 }
 
+// 0.2 s: longer than any delay in a synth's reverb, so a tail still on its
+// way to the output can't be cut off.
+std::uint64_t Synth::resting_after() {
+  return static_cast<std::uint64_t>(0.2 * stk::Stk::sampleRate());
+}
+
 void Synth::start(const Note &note) {
+  quiet_frames = 0;
   starting_pan = note.pan;
   note_on(note.frequency, note.amplitude, note.sustain);
   starting_pan = 0.0f;
@@ -95,6 +102,16 @@ void Synth::render(float *out, std::uint32_t frames, std::uint32_t channels) {
   const float wanted_pan = std::clamp(pan.load(std::memory_order_relaxed), -1.0f, 1.0f);
   const float glide = 1.0f / (0.02f * static_cast<float>(stk::Stk::sampleRate()));
 
+  // Silent, and no note waiting to start: nothing to compute. Volume and pan
+  // jump to where they're going, as no one hears them get there.
+  if (scheduled.empty() && quiet_frames >= resting_after() && !holding_notes()) {
+    std::fill(out, out + static_cast<std::size_t>(frames) * channels, 0.0f);
+    now += frames;
+    current_volume = wanted_volume;
+    current_pan = wanted_pan;
+    return;
+  }
+
   for (std::uint32_t frame = 0; frame < frames; ++frame, ++now) {
     if (now >= next_start)
       start_due_notes();
@@ -106,6 +123,10 @@ void Synth::render(float *out, std::uint32_t frames, std::uint32_t channels) {
       left = std::tanh(0.7f * left + 0.3f * static_cast<float>(rev.lastOut(0)));
       right = std::tanh(0.7f * right + 0.3f * static_cast<float>(rev.lastOut(1)));
     }
+    if (std::fabs(left) < silent && std::fabs(right) < silent)
+      ++quiet_frames;
+    else
+      quiet_frames = 0;
     current_volume += glide * (wanted_volume - current_volume);
     current_pan += glide * (wanted_pan - current_pan);
     left *= current_volume * std::min(1.0f, 1.0f - current_pan);
@@ -173,12 +194,20 @@ void StringSynth::note_on(float frequency, float amplitude, float sustain) {
   next_voice = (next_voice + 1) % voices.size();
 }
 
+bool StringSynth::holding_notes() const {
+  for (const auto &v : voices)
+    if (v.start_in >= 0)
+      return true;
+  return false;
+}
+
 void StringSynth::tick(float &left, float &right) {
   strum_pos = 0;
   float sample = 0.0f;
   for (auto &v : voices) {
 
     if (v.start_in >= 0 && v.start_in-- == 0) {
+      v.sounding = true;
       v.envelope.setAllTimes(0.005, v.sustain, 0.0, 0.1);
       v.envelope.keyOn();
 
@@ -188,10 +217,23 @@ void StringSynth::tick(float &left, float &right) {
       v.detuned.noteOn(v.frequency * 1.004f, v.amplitude * 0.5f);
       v.low.noteOn(v.frequency * 0.5, v.amplitude * 0.4f);
     }
+    if (!v.sounding)
+      continue;
 
     const double out = v.main.tick() + v.detuned.tick() + v.low.tick();
     const double voiced = out + 0.5 * v.body.tick(out);
     sample += static_cast<float>(v.envelope.tick() * voiced);
+
+    // The envelope has closed (it decays to a sustain of 0): the voice is
+    // silent from here on, though its strings would ring on underneath.
+    // Cleared, so its next note doesn't start on this one's leftovers.
+    if (v.envelope.getState() != stk::ADSR::ATTACK && v.envelope.lastOut() <= 0.0) {
+      v.sounding = false;
+      v.main.clear();
+      v.detuned.clear();
+      v.low.clear();
+      v.body.clear();
+    }
   }
   sample += static_cast<float>(0.5 * body_air.tick(sample) + 0.4 * body_top.tick(sample));
   // sample = chorus.tick(sample);

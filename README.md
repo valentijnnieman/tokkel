@@ -194,6 +194,14 @@ protected:
 };
 ```
 
+A synth rests when it's done: once its sound (with its reverb) has been
+silent for 0.2 s and no note is waiting, `tick()` isn't called until the next
+note starts, so a quiet instrument costs nothing. If your synth holds notes
+back itself (strums its strings one after another, say), override
+`holding_notes()` to return true while it does, or it may rest before they
+start. Inside `tick()`, skip voices that have gone silent: the built-in synths
+do, which is most of what they save.
+
 For audio that isn't played by note, subclass `tokkel::Instrument` and fill
 the buffer in `render()`, then `engine.play()` it (and `engine.stop()` it with
 the id that returns).

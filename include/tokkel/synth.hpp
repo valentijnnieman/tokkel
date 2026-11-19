@@ -86,6 +86,14 @@ protected:
   // are averaged.
   virtual void tick(float &left, float &right) = 0;
 
+  // Below this a sample is silence (-100 dB): a voice or instrument that
+  // stays under it is done, and stops being computed.
+  static constexpr float silent = 1e-5f;
+
+  // Whether the synth holds notes back itself that haven't started yet (a
+  // strum's later strings): it's silent now, but not done.
+  virtual bool holding_notes() const { return false; }
+
   float random_f(float min, float max);
 
 private:
@@ -123,6 +131,12 @@ private:
   float current_reverb = 0.0f;
   // The volume and pan heard now, gliding to the atomics' values.
   float current_volume = 1.0f, current_pan = 0.0f;
+
+  // Frames the instrument's sound (with its reverb) has been silent, since
+  // its last note started. After resting_after() of it, render() skips the
+  // synth until a note comes: it has nothing left to play.
+  std::uint64_t quiet_frames = 0;
+  static std::uint64_t resting_after();
 };
 
 // Plucked strings (Karplus-Strong, STK's Plucked). Each note plucks the next
@@ -136,6 +150,7 @@ public:
 protected:
   void note_on(float frequency, float amplitude, float sustain) override;
   void tick(float &left, float &right) override;
+  bool holding_notes() const override;
 
 private:
   struct StringSynthVoice {
@@ -144,6 +159,7 @@ private:
     stk::ADSR envelope;
 
     int start_in = -1; // -1 means don't play this note - the default until it's set
+    bool sounding = false; // started and not yet silent: only then is it computed
     float frequency = 0.0f, amplitude = 0.0f, sustain = 0.0f;
   };
 
