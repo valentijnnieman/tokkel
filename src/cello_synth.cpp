@@ -14,6 +14,10 @@ float sample_rate() { return static_cast<float>(stk::Stk::sampleRate()); }
 constexpr float vibrato_depth = 0.004f;
 constexpr float vibrato_delay = 0.3f, vibrato_rise = 0.5f; // seconds
 
+// How long a string must stay silent, once the bow has lifted, before it's
+// done: longer than a period of the lowest note, which can pass zero.
+constexpr float done_after = 0.1f; // seconds
+
 } // namespace
 
 CelloSynth::CelloSynth() {
@@ -42,6 +46,7 @@ void CelloSynth::note_on(float frequency, float amplitude, float sustain) {
   const float attack = 0.15f - 0.07f * velocity;
   voice.string.startBowing(velocity, 1.0 / (attack * sample_rate()));
   voice.age = 0;
+  voice.quiet = 0;
   voice.hold = static_cast<int>(std::max(sustain, 0.05f) * sample_rate());
 }
 
@@ -59,7 +64,18 @@ void CelloSynth::tick(float &left, float &right) {
     ++voice.age;
     if (voice.hold >= 0 && voice.hold-- == 0)
       voice.string.stopBowing(1.0 / (0.25 * sample_rate())); // the bow lifts: 0.25 s
-    strings += static_cast<float>(voice.string.tick());
+    const float out = static_cast<float>(voice.string.tick());
+    strings += out;
+    if (voice.hold >= 0)
+      continue;
+    // The bow is off and the string has gone quiet: done, until it's played
+    // again (cleared, so it starts clean).
+    if (std::fabs(out) >= silent)
+      voice.quiet = 0;
+    else if (++voice.quiet > static_cast<int>(done_after * sample_rate())) {
+      voice.age = -1;
+      voice.string.clear();
+    }
   }
 
   float out = strings;

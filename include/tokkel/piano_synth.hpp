@@ -34,6 +34,7 @@ private:
     stk::StifKarp first, second;
     stk::BiQuad hammer; // low-pass: how soft the attack is
     stk::ADSR envelope;
+    bool sounding = false; // struck and not yet silent: only then is it computed
   };
 
   // When all are ringing, a new note takes over the one played longest ago.

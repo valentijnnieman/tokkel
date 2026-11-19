@@ -1,6 +1,7 @@
 // Renders an STK sine through an offline engine (no audio device) and checks
 // that the mix carries it at the expected level and pitch, then goes silent
 // once the voice is stopped. Then plays notes on the engine's string synth.
+// Last, that a synth gone silent rests (isn't computed) and wakes for a note.
 #include "tokkel/bass_synth.hpp"
 #include "tokkel/bell_synth.hpp"
 #include "tokkel/cello_synth.hpp"
@@ -80,6 +81,36 @@ std::vector<unsigned char> constant_wav(std::uint32_t sample_rate, std::uint32_t
   for (std::uint32_t frame = 0; frame < frames; ++frame)
     std::memcpy(&wav[44 + frame * 2], &level, 2);
   return wav;
+}
+
+// A synth that counts its ticks, to see when Synth::render() stops computing
+// it: a note is a level that fades by 1% a frame (silent after about 1150).
+class CountingSynth : public tokkel::Synth {
+public:
+  long ticks = 0;
+  bool hold = false; // say it's holding a note back
+
+protected:
+  void note_on(float, float amplitude, float) override { level = amplitude; }
+  void tick(float &left, float &right) override {
+    ++ticks;
+    left = right = level;
+    level *= 0.99f;
+  }
+  bool holding_notes() const override { return hold; }
+
+private:
+  float level = 0.0f;
+};
+
+// Renders `seconds` of `synth` on its own, in blocks as an audio device would.
+std::vector<float> render_alone(tokkel::Synth &synth, float seconds) {
+  const std::uint32_t block = 480;
+  std::vector<float> out(static_cast<std::size_t>(seconds * 48000.0f) * 2);
+  for (std::size_t frame = 0; frame < out.size() / 2; frame += block)
+    synth.render(out.data() + frame * 2,
+                 static_cast<std::uint32_t>(std::min<std::size_t>(block, out.size() / 2 - frame)), 2);
+  return out;
 }
 
 } // namespace
@@ -707,6 +738,84 @@ int main() {
   std::printf("      cello bowed: %.3f, a second on %.3f, after %.6f\n", bowing, still_bowing, peak(mix));
   check(still_bowing > 0.7f * bowing, "a bowed note keeps sounding");
   check(peak(mix) < 0.02f * bowing, "the cello fades once the bow lifts");
+
+  // Resting: a synth gone silent isn't computed until its next note.
+  CountingSynth counting;
+  render_alone(counting, 1.0f);
+  const long never_played = counting.ticks;
+  counting.play_note(440.0f);
+  std::vector<float> rested = render_alone(counting, 1.0f);
+  const long after_note = counting.ticks - never_played;
+  std::printf("      ticks in a second: never played %ld, after a note %ld\n", never_played,
+              after_note);
+  check(never_played < 12000, "a synth never played rests after a moment");
+  check(rested[0] == 1.0f && after_note > 10000 && after_note < 13000,
+        "a note wakes a resting synth, which rests again once it's silent");
+  counting.hold = true;
+  const long before_hold = counting.ticks;
+  render_alone(counting, 1.0f);
+  check(counting.ticks - before_hold == 48000, "a synth holding a note back doesn't rest");
+  counting.hold = false;
+  render_alone(counting, 1.0f);
+  counting.volume = 0.5f;
+  counting.play_note(440.0f, 1.0f, 0.95f, 0.5f);
+  rested = render_alone(counting, 1.0f);
+  int counted_start = -1;
+  for (int frame = 0; frame < 48000 && counted_start < 0; ++frame)
+    if (rested[frame * 2] > 0.01f) // the last note's fade never quite reaches 0
+      counted_start = frame;
+  check(counted_start == 24000, "a delayed note on a resting synth starts on time");
+  check(std::fabs(rested[24000 * 2] - 0.5f) < 0.001f,
+        "a resting synth's volume is already where it was going");
+
+  // Every synth falls silent after its note, and plays the next one as loud.
+  auto wakes = [](tokkel::Synth &synth, const char *name, float frequency) {
+    const float first = peak(render_alone(synth, 1.0f));
+    render_alone(synth, 4.0f);
+    const float after = peak(render_alone(synth, 1.0f));
+    synth.play_note(frequency, 1.0f, 0.5f);
+    const float again = peak(render_alone(synth, 1.0f));
+    std::printf("      %s: peak %.3f, after %g, again %.3f\n", name, first, after, again);
+    return after == 0.0f && again > 0.4f * first && again < 2.5f * first;
+  };
+  bool all_wake = true;
+  {
+    tokkel::StringSynth synth;
+    synth.play_note(220.0f, 1.0f, 0.5f);
+    all_wake = wakes(synth, "strings", 220.0f) && all_wake;
+  }
+  {
+    tokkel::PianoSynth synth;
+    synth.play_note(220.0f, 1.0f, 0.5f);
+    all_wake = wakes(synth, "piano", 220.0f) && all_wake;
+  }
+  {
+    tokkel::GuitarSynth synth;
+    synth.play_note(220.0f, 1.0f, 0.5f);
+    all_wake = wakes(synth, "guitar", 220.0f) && all_wake;
+  }
+  {
+    tokkel::CelloSynth synth;
+    synth.play_note(220.0f, 1.0f, 0.5f);
+    all_wake = wakes(synth, "cello", 220.0f) && all_wake;
+  }
+  {
+    tokkel::BassSynth synth;
+    synth.play_note(110.0f, 1.0f, 0.5f);
+    all_wake = wakes(synth, "bass", 110.0f) && all_wake;
+  }
+  {
+    tokkel::BellSynth synth;
+    synth.play_note(880.0f, 1.0f, 0.5f);
+    all_wake = wakes(synth, "bell", 880.0f) && all_wake;
+  }
+  {
+    tokkel::DrumSynth synth;
+    const float kick = tokkel::note_frequency("C2");
+    synth.play_note(kick, 1.0f, 0.5f);
+    all_wake = wakes(synth, "drums", kick) && all_wake;
+  }
+  check(all_wake, "every synth goes silent after a note, and wakes for the next");
 
   return failures == 0 ? 0 : 1;
 }

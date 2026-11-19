@@ -24,6 +24,10 @@ float ring_time(float frequency) {
 
 float sample_rate() { return static_cast<float>(stk::Stk::sampleRate()); }
 
+// How long a damped string must stay silent before it's done: longer than a
+// period of the lowest note, which can pass zero.
+constexpr float done_after = 0.1f; // seconds
+
 // Twang's loop feeds back the delay line's previous output, a sample more
 // than setFrequency() counts, which plays it flat (31 cents at A5). The
 // frequency to ask for so that `frequency` is what sounds.
@@ -80,6 +84,8 @@ void GuitarSynth::note_on(float frequency, float amplitude, float sustain) {
   const float velocity = std::clamp(amplitude, 0.0f, 1.0f) * random_f(0.5f, 1.0f);
   voice.frequency = frequency;
   voice.level = velocity;
+  voice.sounding = true;
+  voice.quiet = 0;
 
   // Where it is plucked, varying a little as a hand does: nearer the bridge
   // (lower) is twangier. Set before the frequency, which applies it.
@@ -113,10 +119,19 @@ void GuitarSynth::damp(Voice &voice) {
   voice.horizontal.setLoopGain(loop_gain(voice.frequency, 0.25f));
 }
 
+bool GuitarSynth::holding_notes() const {
+  for (const Voice &voice : voices)
+    if (voice.start_in >= 0)
+      return true;
+  return false;
+}
+
 void GuitarSynth::tick(float &left, float &right) {
   strum = 0;
   float strings = 0.0f;
   for (Voice &voice : voices) {
+    if (!voice.sounding)
+      continue;
     if (voice.start_in >= 0 && voice.start_in-- == 0) {
       voice.excite_left = voice.excite_length;
       pick_noise = std::max(pick_noise, voice.level);
@@ -135,7 +150,21 @@ void GuitarSynth::tick(float &left, float &right) {
     if (voice.hold >= 0 && voice.hold-- == 0)
       damp(voice);
 
-    strings += static_cast<float>(voice.vertical.tick(in) + 0.6 * voice.horizontal.tick(in));
+    const float out = static_cast<float>(voice.vertical.tick(in) + 0.6 * voice.horizontal.tick(in));
+    strings += out;
+
+    // Plucked, damped and gone quiet: done, until it's played again (cleared,
+    // so it starts clean).
+    if (voice.start_in >= 0 || voice.excite_left > 0 || voice.hold >= 0)
+      continue;
+    if (std::fabs(out) >= silent)
+      voice.quiet = 0;
+    else if (++voice.quiet > static_cast<int>(done_after * sample_rate())) {
+      voice.sounding = false;
+      voice.vertical.clear();
+      voice.horizontal.clear();
+      voice.pick.clear();
+    }
   }
 
   // The pick against the string: a few ms of quiet, bright noise.
